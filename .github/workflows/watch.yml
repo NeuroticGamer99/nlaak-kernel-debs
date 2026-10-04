@@ -1,0 +1,68 @@
+# Tell a person when backports offers a kernel this repository has no release
+# for. It only opens an issue. It never publishes anything and never changes
+# the pin in the homelab repository, which is a decision made by hand.
+---
+name: Watch for a new backports kernel
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install the Debian archive keyring
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debian-archive-keyring gnupg
+
+      - name: Ask the live backports index for its kernel
+        run: python3 scripts/kernel_bump.py latest | tee latest.txt
+
+      # Archive uploads are not atomic: for a while the meta-packages can name
+      # a kernel whose packages are not all in the index. An incomplete set is
+      # reported in the log and not raised, since it cannot be published yet.
+      - name: Open an issue for a kernel without a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(sed -n 's/^version=//p' latest.txt)"
+          tag="$(sed -n 's/^tag=//p' latest.txt)"
+          complete="$(sed -n 's/^complete=//p' latest.txt)"
+          published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
+          if printf '%s\n' "$published" | grep -Fxq "$tag"; then
+            echo "$tag already has a published release."
+            exit 0
+          fi
+          if [ "$complete" != "true" ]; then
+            echo "Backports names $version but its packages are not all in the index yet."
+            exit 0
+          fi
+          title="New backports kernel: $version"
+          existing="$(gh issue list --state all --search "\"$title\" in:title" \
+            --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            echo "An issue for $version already exists."
+            exit 0
+          fi
+          cat > body.md <<EOF
+          Debian trixie-backports now offers $version and this repository has
+          no \`$tag\` release.
+
+          Nothing has changed in the homelab repository. If the lab should move
+          to this kernel, run the **Publish a kernel release** workflow with
+          version \`$version\` and snapshot \`live\`, then review the printed
+          variables in the homelab repository like any other change.
+          EOF
+          gh issue create --title "$title" --body-file body.md

@@ -1,0 +1,94 @@
+# Publish a kernel release from a button. Run it from the Actions tab with the
+# package version and a snapshot timestamp. It verifies Debian's signatures,
+# downloads the kernel's packages, and publishes them as an immutable release.
+# It never changes anything in the homelab repository: the person running it
+# pastes the printed variables there and reviews them like any other change.
+---
+name: Publish a kernel release
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version, for example 7.1.13-1~bpo13+1"
+        required: true
+        type: string
+      snapshot:
+        description: "live (a kernel backports still offers whole), now, or a snapshot.debian.org timestamp"
+        required: true
+        default: live
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-kernel
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install the Debian archive keyring
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debian-archive-keyring gnupg
+
+      # Inputs reach the script as environment variables, never spliced into
+      # the command line.
+      - name: Stage and verify the packages
+        env:
+          VERSION: ${{ inputs.version }}
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: python3 scripts/kernel_bump.py stage "$VERSION" "$SNAPSHOT" staged
+
+      # A published immutable release cannot be edited, so the assets go onto a
+      # draft first and the release is published only once every one of them is
+      # there. A draft left by an interrupted run is not a release: it is
+      # deleted and the upload starts again, so a retry is never blocked.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          tag="$(cat staged/tag.txt)"
+          api="repos/$GITHUB_REPOSITORY/releases"
+          release_ids() {
+            gh api "$api" --paginate \
+              --jq ".[] | select(.tag_name == \"$tag\" and .draft == $1) | .id"
+          }
+          if [ -n "$(release_ids false)" ]; then
+            echo "Release $tag is already published and immutable; use a new version." >&2
+            exit 1
+          fi
+          for id in $(release_ids true); do
+            echo "Deleting the unfinished draft $id left by an earlier run."
+            gh api -X DELETE "$api/$id"
+          done
+          {
+            echo "Debian trixie-backports kernel $VERSION, copied from snapshot.debian.org."
+            echo
+            echo "Variables for the homelab repository's base_linux defaults:"
+            echo
+            echo '```yaml'
+            cat "staged/$tag.defaults.yml"
+            echo '```'
+          } > notes.md
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "$tag" \
+            --notes-file notes.md "staged/$tag"/*
+          id="$(release_ids true)"
+          want="$(ls "staged/$tag" | sort)"
+          have="$(gh api "$api/$id" --jq '.assets[].name' | sort)"
+          if [ "$want" != "$have" ]; then
+            echo "The draft does not hold exactly the staged files; not publishing." >&2
+            diff <(echo "$want") <(echo "$have") >&2 || true
+            exit 1
+          fi
+          gh api -X PATCH "$api/$id" -F draft=false
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
