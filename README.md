@@ -26,8 +26,9 @@ immutable.
 - **Publish a kernel release** (manual): takes a package version and a source,
   `live` for a kernel the live backports index still offers whole (this does
   not depend on snapshot.debian.org) or a snapshot.debian.org timestamp for one
-  that has been replaced. It verifies the signature chain, requires every
-  package the kernel depends on at that exact version, and publishes the
+  that has been replaced. It verifies the signature chain, requires both
+  meta-packages and, for every exact version pin among the kernel's
+  dependencies, a package at the pinned version, and publishes the
   release only once all of its files are attached. A draft left by an
   interrupted run is deleted and the upload restarted; a published release is
   never touched. It prints the variables to paste into the homelab repository.

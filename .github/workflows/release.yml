@@ -56,8 +56,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
+          SNAPSHOT: ${{ inputs.snapshot }}
         run: |
           tag="$(cat staged/tag.txt)"
+          if [ "$SNAPSHOT" = live ]; then
+            source="the live Debian backports index"
+          else
+            source="snapshot.debian.org ($SNAPSHOT)"
+          fi
           api="repos/$GITHUB_REPOSITORY/releases"
           release_ids() {
             gh api "$api" --paginate \
@@ -72,7 +78,7 @@ jobs:
             gh api -X DELETE "$api/$id"
           done
           {
-            echo "Debian trixie-backports kernel $VERSION, copied from snapshot.debian.org."
+            echo "Debian trixie-backports kernel $VERSION, copied from $source."
             echo
             echo "Variables for the homelab repository's base_linux defaults:"
             echo

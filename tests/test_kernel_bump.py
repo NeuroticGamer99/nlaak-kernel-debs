@@ -81,6 +81,48 @@ class Closure(unittest.TestCase):
         self.assertEqual(missing, {"linux-image-amd64", "linux-headers-amd64"})
 
 
+class PinnedDependencies(unittest.TestCase):
+    """A dependency is resolved against its own (= version), not the root's."""
+
+    def test_a_dependency_pinned_to_a_rebuild_version_is_required(self):
+        index = complete_index()
+        index["linux-image-amd64"]["Depends"] = f"linux-image-{ABI} (= {V}+b1)"
+        _, missing = kb.closure(index, V)
+        self.assertEqual(missing, {f"linux-image-{ABI}"})
+
+    def test_a_dependency_pinned_to_a_rebuild_version_is_included_when_present(self):
+        index = complete_index()
+        index["linux-image-amd64"]["Depends"] = f"linux-image-{ABI} (= {V}+b1)"
+        index[f"linux-image-{ABI}"]["Version"] = f"{V}+b1"
+        # The headers package depends on the image too, so it moves with it.
+        index[f"linux-headers-{ABI}"]["Depends"] = index[f"linux-headers-{ABI}"]["Depends"].replace(
+            f"linux-image-{ABI} (= {V})", f"linux-image-{ABI} (= {V}+b1)")
+        found, missing = kb.closure(index, V)
+        self.assertEqual(missing, set())
+        self.assertEqual(found[f"linux-image-{ABI}"]["Version"], f"{V}+b1")
+
+    def test_one_satisfied_alternative_is_enough(self):
+        index = complete_index()
+        index["linux-image-amd64"]["Depends"] = f"linux-image-{ABI} (= {V}) | linux-image-other (= {V})"
+        found, missing = kb.closure(index, V)
+        self.assertEqual(missing, set())
+        self.assertNotIn("linux-image-other", found)
+
+    def test_no_satisfied_alternative_reports_the_whole_group(self):
+        index = complete_index()
+        del index[f"linux-modules-{ABI}"]
+        index[f"linux-image-{ABI}"]["Depends"] = (
+            f"linux-modules-{ABI} (= {V}) | linux-modules-other (= {V}), linux-base-{ABI} (= {V})")
+        _, missing = kb.closure(index, V)
+        self.assertEqual(missing, {f"linux-modules-{ABI} | linux-modules-other"})
+
+    def test_a_pin_on_a_package_from_the_main_archive_is_not_ours(self):
+        index = complete_index()
+        index[f"linux-image-{ABI}"]["Depends"] += ", libexample1 (= 1.0-1)"
+        _, missing = kb.closure(index, V)
+        self.assertEqual(missing, set())
+
+
 class Tags(unittest.TestCase):
     def test_revisions_of_one_upstream_kernel_get_different_tags(self):
         self.assertNotEqual(kb.tag_for("7.1.13-1~bpo13+1"), kb.tag_for("7.1.13-2~bpo13+1"))

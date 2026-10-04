@@ -130,11 +130,17 @@ def closure(packages, version):
     """The packages that make up this kernel version, and what is missing.
 
     Starts from the two meta-packages, which must both be in the index at this
-    exact version. A dependency that pins this version with (= version) must
-    also be in the index at it: one that is absent, or present at a different
-    version, is reported as missing and never skipped. Dependencies that do not
-    pin this version (initramfs-tools and the like) come from the main archive
-    and are not part of the set unless the index holds them at this version.
+    exact version. After that every dependency is resolved against its own
+    constraint, not against the root's version: a kernel package may pin a
+    binary rebuild (7.1.13-1~bpo13+1+b1) while the meta-packages do not.
+
+    A group of alternatives made only of exact pins on linux-* packages
+    ("a (= X) | b (= Y)") is part of the set and must be satisfied: one
+    alternative that the index holds at its pinned version is enough, and the
+    first such one is used. A group no alternative can satisfy is reported as
+    missing, its names joined with " | ". Any other dependency (initramfs-tools
+    and the like) comes from the main archive, and is added only if the index
+    happens to hold it at the root version.
     """
     found, missing = {}, set()
     queue = []
@@ -150,13 +156,16 @@ def closure(packages, version):
             continue
         found[name] = packages[name]
         for alternatives in dependency_groups(found[name].get("Depends", "")):
-            pinned = [a for a in alternatives if a[1] == "=" and a[2] == version]
-            for dep, _, _ in pinned or alternatives:
-                pkg = packages.get(dep)
-                if pkg is not None and pkg.get("Version") == version:
-                    queue.append(dep)
-                elif pinned:
-                    missing.add(dep)
+            if all(op == "=" and dep.startswith("linux-") for dep, op, _ in alternatives):
+                satisfied = [dep for dep, _, wanted in alternatives
+                             if dep in packages and packages[dep].get("Version") == wanted]
+                if satisfied:
+                    queue.append(satisfied[0])
+                else:
+                    missing.add(" | ".join(dep for dep, _, _ in alternatives))
+            else:
+                queue.extend(dep for dep, _, _ in alternatives
+                             if dep in packages and packages[dep].get("Version") == version)
     return found, missing
 
 

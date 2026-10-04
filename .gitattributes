@@ -1,0 +1,10 @@
+# Normalize text to LF in Git and in Windows/Linux working trees.
+* text=auto eol=lf
+
+# Release packages and other binary artifacts must remain byte-for-byte intact.
+*.deb binary
+*.xz binary
+*.gz binary
+*.zip binary
+*.gpg binary
+*.pgp binary
