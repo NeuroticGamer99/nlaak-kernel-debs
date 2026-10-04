@@ -27,8 +27,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq debian-archive-keyring gnupg
 
+      # Not piped through tee: a pipeline reports the last command's status, so
+      # a failure of the script would be hidden and the job would go green.
       - name: Ask the live backports index for its kernel
-        run: python3 scripts/kernel_bump.py latest | tee latest.txt
+        run: |
+          python3 scripts/kernel_bump.py latest > latest.txt
+          cat latest.txt
 
       # Archive uploads are not atomic: for a while the meta-packages can name
       # a kernel whose packages are not all in the index. An incomplete set is
@@ -40,6 +44,10 @@ jobs:
           version="$(sed -n 's/^version=//p' latest.txt)"
           tag="$(sed -n 's/^tag=//p' latest.txt)"
           complete="$(sed -n 's/^complete=//p' latest.txt)"
+          if [ -z "$version" ] || [ -z "$tag" ]; then
+            echo "The kernel check printed no version; failing instead of reporting all quiet." >&2
+            exit 1
+          fi
           published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
           if printf '%s\n' "$published" | grep -Fxq "$tag"; then
             echo "$tag already has a published release."

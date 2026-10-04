@@ -123,6 +123,35 @@ class PinnedDependencies(unittest.TestCase):
         self.assertEqual(missing, set())
 
 
+class Signatures(unittest.TestCase):
+    """What counts as a verified InRelease, from gpgv's --status-fd output."""
+
+    GOOD = ("[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG 6ED0E7B82643E131 Debian Archive Automatic Signing Key\n"
+            "[GNUPG:] VALIDSIG 4CB50190207B4758A3F73A796ED0E7B82643E131 2026-10-04 1791123246 0 4 0 1 8 01 B8B8\n")
+    UNKNOWN = "[GNUPG:] NEWSIG\n[GNUPG:] ERRSIG 78DBA3BC47EF2265 1 8 01 1791123266 9 B8E5\n[GNUPG:] NO_PUBKEY 78DBA3BC47EF2265\n"
+
+    def test_one_good_signature_is_enough_when_another_key_is_unknown(self):
+        # The real case on a runner whose keyring lacks Debian's newest archive key.
+        self.assertEqual(kb.signature_problem(self.GOOD + self.UNKNOWN), "")
+
+    def test_two_good_signatures_are_accepted(self):
+        self.assertEqual(kb.signature_problem(self.GOOD + self.GOOD), "")
+
+    def test_no_known_signer_is_refused(self):
+        self.assertIn("no good signature", kb.signature_problem(self.UNKNOWN))
+
+    def test_an_empty_status_is_refused(self):
+        self.assertIn("no good signature", kb.signature_problem(""))
+
+    def test_a_bad_signature_is_refused_even_beside_a_good_one(self):
+        bad = "[GNUPG:] BADSIG 6ED0E7B82643E131 Debian Archive Automatic Signing Key\n"
+        self.assertIn("bad", kb.signature_problem(self.GOOD + bad))
+
+    def test_an_expired_key_alone_is_refused(self):
+        expired = "[GNUPG:] EXPKEYSIG 6ED0E7B82643E131 Debian Archive Automatic Signing Key\n"
+        self.assertIn("no good signature", kb.signature_problem(expired))
+
+
 class Tags(unittest.TestCase):
     def test_revisions_of_one_upstream_kernel_get_different_tags(self):
         self.assertNotEqual(kb.tag_for("7.1.13-1~bpo13+1"), kb.tag_for("7.1.13-2~bpo13+1"))

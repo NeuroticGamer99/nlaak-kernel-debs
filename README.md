@@ -18,8 +18,10 @@ Nothing here is trusted on its own. The homelab repository records a sha256 for
 every file and refuses any file that differs, so replacing a release cannot get
 a different package installed. Those sha256 values are taken from Debian's
 Packages index, which `scripts/kernel_bump.py` checks against the signed `InRelease`
-with Debian's archive keyring before it downloads anything. Releases are
-immutable.
+with Debian's archive keyring before it downloads anything. Debian signs
+`InRelease` with several archive keys so older keyrings keep working; like apt,
+the script needs at least one good signature from a key it trusts, and refuses
+a release with any bad signature. Releases are immutable.
 
 ## Workflows
 

@@ -67,9 +67,30 @@ def verify_release(inrelease, keyrings):
         for keyring in keyrings:
             cmd += ["--keyring", keyring]
         result = subprocess.run(cmd + [str(signed)], capture_output=True, text=True, check=False)
-        if result.returncode != 0 or "[GNUPG:] VALIDSIG" not in result.stdout:
-            sys.exit(f"InRelease signature check failed:\n{result.stdout}{result.stderr}")
+        problem = signature_problem(result.stdout)
+        if problem or not text.exists():
+            sys.exit(f"InRelease signature check failed: {problem or 'no verified text'}\n"
+                     f"{result.stdout}{result.stderr}")
         return text.read_text(encoding="utf-8")
+
+
+def signature_problem(status):
+    """Why gpgv's status output is not acceptable, or "" if it is.
+
+    Debian signs InRelease with more than one archive key, so that an older
+    keyring still verifies it during a key rollover. gpgv exits non-zero when
+    any one of those signatures cannot be checked, but apt accepts a release
+    that carries at least one good signature from a trusted key, and so does
+    this: one good signature is required, and a bad one is refused. Signatures
+    from keys the keyring does not hold are ignored.
+    """
+    lines = [line.removeprefix("[GNUPG:] ").split(" ", 1)[0] for line in status.splitlines()
+             if line.startswith("[GNUPG:] ")]
+    if "BADSIG" in lines:
+        return "a signature is bad"
+    if "GOODSIG" not in lines or "VALIDSIG" not in lines:
+        return "no good signature from a trusted key"
+    return ""
 
 
 def release_entry(release_text, name):
