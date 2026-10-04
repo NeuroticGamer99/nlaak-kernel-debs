@@ -8,8 +8,11 @@ Each release holds the `.deb` files for one kernel and a `SHA256SUMS`. It is
 tagged `kernel-` and the whole Debian version with `-` for `~` and `+`, so
 `7.1.13-2~bpo13+1` is `kernel-7.1.13-2-bpo13-1` and a later revision of a kernel
 never collides with an earlier one. (The first release, `kernel-7.1.13`, was
-published by hand before this naming and keeps its tag.) File names use the same
-substitution, because GitHub rewrites `~` and `+`. The packages are unmodified
+published by hand before this naming. The same packages were later republished
+by the workflow as `kernel-7.1.13-1-bpo13-1`; the checksums are identical and
+the older release stays as it is.) File names use the same substitution: Git forbids `~` in a tag name, and plain
+file names mean the name in a download URL always equals the one in the
+checksum list. The packages are unmodified
 Debian builds.
 
 ## Trust

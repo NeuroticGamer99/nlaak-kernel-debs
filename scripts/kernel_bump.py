@@ -228,7 +228,8 @@ def stage(args):
     sums, yaml = [], []
     for name in sorted(found):
         pkg = found[name]
-        # GitHub rewrites '~' and '+' in asset names, so the release uses '-'.
+        # No '~' or '+' in release file names: the tag cannot hold '~', and a
+        # plain name always equals the one recorded in the checksum list.
         asset = pkg["Filename"].rsplit("/", 1)[1].replace("~", "-").replace("+", "-")
         download(base + "/" + pkg["Filename"], release / asset, pkg["SHA256"])
         sums.append(f"{pkg['SHA256']}  {asset}")
